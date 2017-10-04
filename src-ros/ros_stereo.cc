@@ -24,15 +24,16 @@
 #include<fstream>
 #include<chrono>
 
-#include<ros/ros.h>
+#include <ros/ros.h>
 #include <cv_bridge/cv_bridge.h>
 #include <message_filters/subscriber.h>
 #include <message_filters/time_synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
 
-#include<opencv2/core/core.hpp>
+//#include<opencv2/core/core.hpp>
 
-#include"../../../include/System.h"
+//#include"../../../include/System.h"
+#include"../include/System.h"
 
 using namespace std;
 
@@ -50,28 +51,28 @@ public:
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "RGBD");
+    ros::init(argc, argv, "orbslam2_stereo_node");
     ros::start();
 
-    if(argc != 4)
+    if(argc != 5)
     {
-        cerr << endl << "Usage: rosrun ORB_SLAM2 Stereo path_to_vocabulary path_to_settings do_rectify" << endl;
+        cerr << endl << "Usage: rosrun orbslam2_ros orbslam2_stereo_node path_to_vocabulary path_to_settings do_rectify" << endl;
         ros::shutdown();
         return 1;
     }    
 
     // Create SLAM system. It initializes all system threads and gets ready to process frames.
-    ORB_SLAM2::System SLAM(argv[1],argv[2],ORB_SLAM2::System::STEREO,true);
+    ORB_SLAM2::System SLAM(argv[2],argv[3],ORB_SLAM2::System::STEREO,true);
 
     ImageGrabber igb(&SLAM);
 
-    stringstream ss(argv[3]);
+    stringstream ss(argv[4]);
 	ss >> boolalpha >> igb.do_rectify;
 
     if(igb.do_rectify)
     {      
         // Load settings related to stereo calibration
-        cv::FileStorage fsSettings(argv[2], cv::FileStorage::READ);
+        cv::FileStorage fsSettings(argv[3], cv::FileStorage::READ);
         if(!fsSettings.isOpened())
         {
             cerr << "ERROR: Wrong path to settings" << endl;
@@ -121,9 +122,9 @@ int main(int argc, char **argv)
     SLAM.Shutdown();
 
     // Save camera trajectory
-    SLAM.SaveKeyFrameTrajectoryTUM("KeyFrameTrajectory_TUM_Format.txt");
-    SLAM.SaveTrajectoryTUM("FrameTrajectory_TUM_Format.txt");
-    SLAM.SaveTrajectoryKITTI("FrameTrajectory_KITTI_Format.txt");
+    //SLAM.SaveKeyFrameTrajectoryTUM("KeyFrameTrajectory_TUM_Format.txt");
+    //SLAM.SaveTrajectoryTUM("FrameTrajectory_TUM_Format.txt");
+    //SLAM.SaveTrajectoryKITTI("FrameTrajectory_KITTI_Format.txt");
 
     ros::shutdown();
 

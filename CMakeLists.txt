@@ -1,5 +1,5 @@
-cmake_minimum_required(VERSION 2.8)
-project(ORB_SLAM2)
+cmake_minimum_required(VERSION 2.8.3)
+project(orbslam2_ros)
 
 IF(NOT CMAKE_BUILD_TYPE)
   SET(CMAKE_BUILD_TYPE Release)
@@ -110,4 +110,37 @@ target_link_libraries(mono_kitti ${PROJECT_NAME})
 add_executable(mono_euroc
 Examples/Monocular/mono_euroc.cc)
 target_link_libraries(mono_euroc ${PROJECT_NAME})
+
+
+
+find_package(catkin REQUIRED COMPONENTS
+  roscpp
+  rospy
+  std_msgs
+  sensor_msgs
+  tf
+  image_transport
+  cv_bridge
+)
+
+catkin_package(
+  INCLUDE_DIRS include
+#  LIBRARIES orbslam2_ros
+  CATKIN_DEPENDS roscpp rospy std_msgs tf sensor_msgs image_transport cv_bridge
+#  DEPENDS system_lib
+)
+
+include_directories(
+# include
+  ${catkin_INCLUDE_DIRS}
+)
+
+
+add_executable(orbslam2_stereo_node src-ros/ros_stereo.cc)
+
+target_link_libraries(orbslam2_stereo_node
+   ${catkin_LIBRARIES}
+   ${PROJECT_NAME}
+)
+
 
