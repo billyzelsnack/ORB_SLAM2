@@ -120,7 +120,10 @@ public:
     // You can call this right after TrackMonocular (or stereo or RGBD)
     int GetTrackingState();
     std::vector<MapPoint*> GetTrackedMapPoints();
-    std::vector<cv::KeyPoint> GetTrackedKeyPointsUn();
+	std::vector<cv::KeyPoint> GetTrackedKeyPointsUn();
+	
+	//-- BZ_ADD:
+	Tracking* GetTracking(){ return mpTracker; }
 
 private:
 

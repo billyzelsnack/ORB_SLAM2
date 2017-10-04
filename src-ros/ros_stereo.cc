@@ -29,13 +29,22 @@
 #include <message_filters/subscriber.h>
 #include <message_filters/time_synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
+#include <geometry_msgs/PoseStamped.h>
+#include <tf/LinearMath/Transform.h>
+#include <tf2/LinearMath/Quaternion.h>
 
 //#include<opencv2/core/core.hpp>
 
 //#include"../../../include/System.h"
-#include"../include/System.h"
+#include "../include/System.h"
+#include "../include/Tracking.h"
 
 using namespace std;
+
+
+
+
+
 
 class ImageGrabber
 {
@@ -107,7 +116,10 @@ int main(int argc, char **argv)
         cv::initUndistortRectifyMap(K_r,D_r,R_r,P_r.rowRange(0,3).colRange(0,3),cv::Size(cols_r,rows_r),CV_32F,igb.M1r,igb.M2r);
     }
 
-    ros::NodeHandle nh;
+	ros::NodeHandle nh;
+	
+
+	ros::Publisher poseStampedPublisher = nh.advertise<geometry_msgs::PoseStamped> ( "/camera_pose", 1 );	
 
     message_filters::Subscriber<sensor_msgs::Image> left_sub(nh, "/camera/left/image_raw", 1);
     message_filters::Subscriber<sensor_msgs::Image> right_sub(nh, "/camera/right/image_raw", 1);
@@ -117,7 +129,43 @@ int main(int argc, char **argv)
 
 	ros::start();
 	
-    ros::spin();
+	//ros::spin();
+	
+	//ros::Rate loop_rate(30);
+	while( ros::ok() ) 
+	{
+		ros::spinOnce();
+
+		ORB_SLAM2::Tracking* tracking=SLAM.GetTracking();
+		
+		if( tracking->mState==ORB_SLAM2::Tracking::OK )
+		{
+			double timeStamp=tracking->mCurrentFrame.mTimeStamp;			
+
+			cv::Mat Tcwi=tracking->mCurrentFrame.mTcw.inv();
+			tf::Matrix3x3 ori( 	Tcwi.at<float>( 0, 0 ), Tcwi.at<float>( 0, 1 ), Tcwi.at<float>( 0, 2 ),
+								Tcwi.at<float>( 1, 0 ), Tcwi.at<float>( 1, 1 ), Tcwi.at<float>( 1, 2 ),
+								Tcwi.at<float>( 2, 0 ), Tcwi.at<float>( 2, 1 ), Tcwi.at<float>( 2, 2 ) );
+			tf::Quaternion quaternion;
+			ori.getRotation(quaternion);
+	
+			geometry_msgs::PoseStamped poseStamped;
+			poseStamped.header.stamp=ros::Time(timeStamp);
+			poseStamped.header.frame_id="/world";			
+			poseStamped.pose.orientation.x=quaternion.getX();
+			poseStamped.pose.orientation.y=quaternion.getY();
+			poseStamped.pose.orientation.z=quaternion.getZ();
+			poseStamped.pose.orientation.w=quaternion.getW();
+			poseStamped.pose.position.x=Tcwi.at<float>( 0, 3 );
+			poseStamped.pose.position.y=Tcwi.at<float>( 1, 3 );
+			poseStamped.pose.position.z=Tcwi.at<float>( 2, 3 );
+
+			poseStampedPublisher.publish( poseStamped );			
+		}
+
+
+		//loop_rate.sleep();
+	}
 
     // Stop all threads
     SLAM.Shutdown();

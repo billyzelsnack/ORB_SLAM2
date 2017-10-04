@@ -9,6 +9,8 @@ Please don't assume that this actually works at all at this point. I use this re
 
 ### Publications
 
+	geometry_msgs/PoseStamped    /camera_pose     
+
 ### Assumptions:
 
 * You are going to build in ~/orbslam2_ws  
@@ -40,7 +42,7 @@ Launch a roscore in a new terminal if you don't already have a roscore running.
     /opt/ros/kinetic/setup.bash
     roscore
 
-Find you the terminal you built in or open a new one.
+Find the terminal you built in or open a new one.
 
     cd ~/orbslam2_ws
     source devel/setup.bash
