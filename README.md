@@ -1,3 +1,62 @@
+## orbslam2-ros
+A ROS version of https://github.com/raulmur/ORB_SLAM2
+
+Please don't assume that this actually works at all at this point. I use this repo mostly to transfer work between my desktop and laptop.
+
+### Enhancements
+
+	More conventional catkin workspace
+
+### Publications
+
+### Assumptions:
+
+* You are going to build in ~/orbslam2_ws  
+* You have already installed and want to use ROS kinetic
+
+### To build:
+
+Follow directions from original ORB-SLAM2 instructions to install Pangolin and Eigen3 prerequisites.
+
+    /opt/ros/kinetic/setup.bash
+    cd ~  
+    mkdir orbslam2_ws  
+    cd orbslam2_ws  
+    mkdir src  
+    catkin_make  
+    source devel/setup.bash  
+    cd src  
+    git clone https://github.com/billyzelsnack/orbslam2-ros.git
+	cd orbslam2-ros
+	chmod +x buildfirst.sh
+	. buildfirst.sh  
+    cd ../..
+    catkin_make  
+
+### To run:
+
+Launch a roscore in a new terminal if you don't already have a roscore running.
+
+    /opt/ros/kinetic/setup.bash
+    roscore
+
+Find you the terminal you built in or open a new one.
+
+    cd ~/orbslam2_ws
+    source devel/setup.bash
+    roscd orbslam2_ros
+    . runstereo.sh
+
+
+
+----------------------------
+
+
+
+
+
+
+
 # ORB-SLAM2
 **Authors:** [Raul Mur-Artal](http://webdiis.unizar.es/~raulmur/), [Juan D. Tardos](http://webdiis.unizar.es/~jdtardos/), [J. M. M. Montiel](http://webdiis.unizar.es/~josemari/) and [Dorian Galvez-Lopez](http://doriangalvez.com/) ([DBoW2](https://github.com/dorian3d/DBoW2))
 
