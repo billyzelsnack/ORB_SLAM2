@@ -1,4 +1,6 @@
 ## orbslam2-ros
+THIS IS COMPLETELY BROKEN CURRENTLY.
+
 A ROS version of https://github.com/raulmur/ORB_SLAM2
 
 Please don't assume that this actually works at all at this point. I use this repo mostly to transfer work between my desktop and laptop.
