@@ -38,9 +38,11 @@ public:
 
     Map* mpMap;
 
-    void DrawMapPoints();
-    void DrawKeyFrames(const bool bDrawKF, const bool bDrawGraph);
-    void DrawCurrentCamera(pangolin::OpenGlMatrix &Twc);
+	void FollowKeyFrames(unsigned char& out_throttleServo, unsigned char& out_steeringServo);
+    void DrawMapPoints(bool drawPoints, bool drawTiles);
+	void DrawKeyFrames(const bool bDrawKF, const bool bDrawGraph);
+	void DrawWaypoints( bool generate, bool lower );	
+    void DrawCurrentCamera();
     void SetCurrentCameraPose(const cv::Mat &Tcw);
     void SetReferenceKeyFrame(KeyFrame *pKF);
     void GetCurrentOpenGLCameraMatrix(pangolin::OpenGlMatrix &M);

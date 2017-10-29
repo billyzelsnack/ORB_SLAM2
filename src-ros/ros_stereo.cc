@@ -30,8 +30,12 @@
 #include <message_filters/time_synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <std_msgs/UInt16.h>
+
 #include <tf/LinearMath/Transform.h>
 #include <tf2/LinearMath/Quaternion.h>
+
+#include <opencv2/highgui.hpp>
 
 //#include<opencv2/core/core.hpp>
 
@@ -40,7 +44,6 @@
 #include "../include/Tracking.h"
 
 using namespace std;
-
 
 
 
@@ -118,15 +121,59 @@ int main(int argc, char **argv)
 
 	ros::NodeHandle nh;
 	
+	ros::Publisher throttleServo_pub =nh.advertise<std_msgs::UInt16> ( "/throttleServo", 1 );
+	ros::Publisher steeringServo_pub =nh.advertise<std_msgs::UInt16> ( "/steeringServo", 1 );
+	
 
-	ros::Publisher poseStampedPublisher = nh.advertise<geometry_msgs::PoseStamped> ( "/camera_pose", 1 );	
+	/*
+	ros::Publisher odometry_pub = nh.advertise<nav_msgs::Odometry> ( "/odometry", 1 );
+	{
+	odometry_pub.header.seq=
+	odometry_pub.header.stamp=
+	odometry_pub.header.frame_id=
+	odometry_pub.child_frame_id;
+	
+	geometry_msgs::PoseWithCovariance posecov;
+	posecov.pose.position.x=
+	posecov.pose.position.y=
+	posecov.pose.position.z=
+	posecov.orientation.x=
+	posecov.orientation.y=
+	posecov.orientation.z=
+	posecov.orientation.w=
+	posecov.covariance={cox_x, 0, 0, 0, 0, 0,
+						0, cov_y, 0, 0, 0, 0,
+						0, 0, cov_z, 0, 0, 0,
+						0, 0, 0, 99999, 0, 0,
+						0, 0, 0, 0, 99999, 0,
+						0, 0, 0, 0, 0, 99999}
+	odometry_pub.pose=posecov;
+
+	geometry_msgs::TwistWithCovariance twistcov;
+	twistcov.twist.linear.x=
+	twistcov.twist.linear.y=
+	twistcov.twist.linear.z=
+	twistcov.twist.angular.x=
+	twistcov.twist.angular.y=
+	twistcov.twist.angular.z=	
+	twistcov.covariance={cox_x, 0, 0, 0, 0, 0,
+						0, cov_y, 0, 0, 0, 0,
+						0, 0, cov_z, 0, 0, 0,
+						0, 0, 0, 99999, 0, 0,
+						0, 0, 0, 0, 99999, 0,
+						0, 0, 0, 0, 0, 99999}
+	odometry_pub.twist=twistcov;
+	}
+	*/
+
+	//ros::Publisher poseStampedPublisher = nh.advertise<geometry_msgs::PoseStamped> ( "/pose", 1 );	
 
     message_filters::Subscriber<sensor_msgs::Image> left_sub(nh, "/camera/left/image_raw", 1);
     message_filters::Subscriber<sensor_msgs::Image> right_sub(nh, "/camera/right/image_raw", 1);
     typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image> sync_pol;
     message_filters::Synchronizer<sync_pol> sync(sync_pol(10), left_sub,right_sub);
-    sync.registerCallback(boost::bind(&ImageGrabber::GrabStereo,&igb,_1,_2));
-
+	sync.registerCallback(boost::bind(&ImageGrabber::GrabStereo,&igb,_1,_2));
+	 
 	ros::start();
 	
 	//ros::spin();
@@ -142,6 +189,7 @@ int main(int argc, char **argv)
 		{
 			double timeStamp=tracking->mCurrentFrame.mTimeStamp;			
 
+			/*
 			cv::Mat Tcwi=tracking->mCurrentFrame.mTcw.inv();
 			tf::Matrix3x3 ori( 	Tcwi.at<float>( 0, 0 ), Tcwi.at<float>( 0, 1 ), Tcwi.at<float>( 0, 2 ),
 								Tcwi.at<float>( 1, 0 ), Tcwi.at<float>( 1, 1 ), Tcwi.at<float>( 1, 2 ),
@@ -161,6 +209,10 @@ int main(int argc, char **argv)
 			poseStamped.pose.position.z=Tcwi.at<float>( 2, 3 );
 
 			poseStampedPublisher.publish( poseStamped );			
+			*/
+
+			throttleServo_pub.publish( SLAM.throttleServo );
+			steeringServo_pub.publish( SLAM.steeringServo );
 		}
 
 
@@ -205,17 +257,33 @@ void ImageGrabber::GrabStereo(const sensor_msgs::ImageConstPtr& msgLeft,const se
         return;
     }
 
-    if(do_rectify)
+	cv::Mat Tcw;
+	cv::Mat imLeft, imRight;
+	//cv::Mat im;	
+	if(do_rectify)
     {
-        cv::Mat imLeft, imRight;
         cv::remap(cv_ptrLeft->image,imLeft,M1l,M2l,cv::INTER_LINEAR);
         cv::remap(cv_ptrRight->image,imRight,M1r,M2r,cv::INTER_LINEAR);
-        mpSLAM->TrackStereo(imLeft,imRight,cv_ptrLeft->header.stamp.toSec());
-    }
+		Tcw=mpSLAM->TrackStereo(imLeft,imRight,cv_ptrLeft->header.stamp.toSec());
+		//im=imLeft.clone();
+	}
     else
     {
-        mpSLAM->TrackStereo(cv_ptrLeft->image,cv_ptrRight->image,cv_ptrLeft->header.stamp.toSec());
-    }
+        Tcw=mpSLAM->TrackStereo(cv_ptrLeft->image,cv_ptrRight->image,cv_ptrLeft->header.stamp.toSec());
+		//im=cv_ptrLeft->image;
+	}
+	
+	if( !Tcw.empty() )//&& !im.empty() )
+	{
+    	int state = mpSLAM->GetTrackingState();
+    	vector<ORB_SLAM2::MapPoint*> vMPs = mpSLAM->GetTrackedMapPoints();
+    	vector<cv::KeyPoint> vKeys = mpSLAM->GetTrackedKeyPointsUn();
+	
+		cv::Mat im=mpSLAM->GetTracking()->mImGray.clone();//copyTo(im);
+		//cvtColor(im,im,CV_GRAY2RGB);
+		
+		mpSLAM->mpViewer->SetImagePose(im,Tcw,state,vKeys,vMPs);
+	}
 
 }
 

@@ -54,7 +54,12 @@ public:
 
     bool isStopped();
 
-    void Release();
+	void Release();
+
+	void SetImagePose(const cv::Mat &im, const cv::Mat &Tcw, const int &status,
+		const std::vector<cv::KeyPoint> &vKeys, const std::vector<MapPoint*> &vMPs);
+	void GetImagePose(cv::Mat &im, cv::Mat &Tcw, int &status,
+		std::vector<cv::KeyPoint> &vKeys,  std::vector<MapPoint*> &vMPs);
 
 private:
 
@@ -79,7 +84,16 @@ private:
 
     bool mbStopped;
     bool mbStopRequested;
-    std::mutex mMutexStop;
+	std::mutex mMutexStop;
+	
+
+
+	std::mutex mMutexPoseImage;
+    cv::Mat mTcw;
+    cv::Mat mImage;
+    int mStatus;
+    std::vector<cv::KeyPoint> mvKeys;
+    std::vector<MapPoint*> mvMPs;
 
 };
 

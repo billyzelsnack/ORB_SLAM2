@@ -24,8 +24,101 @@
 #include <pangolin/pangolin.h>
 #include <mutex>
 
+
+
 namespace ORB_SLAM2
 {
+
+static const int HMAP_WIDE=100;
+static const int HMAP_DEEP=100;
+static const float HMAP_SNAPXZ=1;
+static const float HMAP_INVALID=-100;
+static float hmap[HMAP_DEEP][HMAP_WIDE];
+
+static std::vector<cv::Vec3f> s_waypoints;
+
+static cv::Vec3f carpos=cv::Vec3f(0,0,0);
+
+
+
+void hmap_clear()
+{
+	for( int jj=0; jj<HMAP_DEEP; jj++ )
+	{
+		for( int ii=0; ii<HMAP_WIDE; ii++ )
+		{
+			float yy=HMAP_INVALID;
+			if( ii==0 || ii==(HMAP_WIDE-1) || jj==0 || jj==(HMAP_DEEP-1) ){ yy=0; }
+			hmap[jj][ii]=yy;
+		}
+	}
+}
+
+float hmap_neighbor_max( int xi, int zi )
+{
+	float maxyy=HMAP_INVALID;
+	for( int jj=zi-1; jj<=zi+1; jj++ )
+	{
+		for( int ii=xi-1; ii<=xi+1; ii++ )
+		{
+			if( ii==xi && jj==zi ){ continue; }
+			if( ii<0 || ii>=HMAP_WIDE || jj<0 || jj>=HMAP_DEEP ){ continue; }
+			float yy=hmap[jj][ii];
+			if( yy==HMAP_INVALID ){ continue; }
+			if( yy>maxyy )
+			{
+				maxyy=yy;
+			}
+		}
+	}
+	return maxyy;
+}
+
+void hmap_set( float xx, float yy, float zz )
+{
+	xx+=HMAP_SNAPXZ*(HMAP_WIDE*0.5);
+	zz+=HMAP_SNAPXZ*(HMAP_DEEP*0.5);
+	
+	int xi=int(xx/HMAP_SNAPXZ);
+	int zi=int(zz/HMAP_SNAPXZ);
+
+	if( xi<0 || xi>=HMAP_WIDE || zi<0 || zi>=HMAP_DEEP ){ return; }
+
+	float yyo=hmap[zi][xi];
+	if( yyo==HMAP_INVALID || yy>yyo )
+	{
+		hmap[zi][xi]=yy;
+	}
+}
+
+void hmap_draw()
+{
+	float zz=-HMAP_SNAPXZ*(HMAP_DEEP*0.5);
+	for( int zi=0; zi<HMAP_DEEP; zi++ )
+	{
+		float xx=-HMAP_SNAPXZ*(HMAP_WIDE*0.5);
+		for( int xi=0; xi<HMAP_WIDE; xi++ )
+		{
+			float yy=hmap[zi][xi];
+			if( yy!=HMAP_INVALID )
+			{
+				float tall=0.1;
+				float maxyy=hmap_neighbor_max( xi, zi );
+				if( maxyy!=HMAP_INVALID ){ tall=maxyy-yy; }
+				if( tall<0 ){ tall=0; }
+
+				glPushMatrix();
+				glTranslatef( xx, yy+(tall/2), zz);				
+				glScalef(HMAP_SNAPXZ/1.0,tall/1.0,HMAP_SNAPXZ/1.0);
+				pangolin::glDrawColouredCube(-0.5,0.5);
+				glPopMatrix();
+			}
+			xx+=HMAP_SNAPXZ;
+		}
+		zz+=HMAP_SNAPXZ;
+	}
+}
+
 
 
 MapDrawer::MapDrawer(Map* pMap, const string &strSettingPath):mpMap(pMap)
@@ -38,46 +131,302 @@ MapDrawer::MapDrawer(Map* pMap, const string &strSettingPath):mpMap(pMap)
     mPointSize = fSettings["Viewer.PointSize"];
     mCameraSize = fSettings["Viewer.CameraSize"];
     mCameraLineWidth = fSettings["Viewer.CameraLineWidth"];
+}
+
+void MapDrawer::FollowKeyFrames( unsigned char& out_throttleServo, unsigned char& out_steeringServo )
+{
+	float maxperpdir=0;
+	cv::Vec3f waypos;
+	cv::Vec3f wayerr;
+	float wayerror=0;
+
+	cv::Mat Tcwi=mCameraPose.inv();
+	float camposx=Tcwi.at<float>(0,3);
+	float camposy=Tcwi.at<float>(1,3);
+	float camposz=Tcwi.at<float>(2,3);
+
+	const vector<KeyFrame*> vpKFs = mpMap->GetAllKeyFrames();
+	for( size_t ii=0; ii<vpKFs.size(); ii++ )
+	{
+		KeyFrame* kf=vpKFs[ii];
+
+		cv::Mat keyT=kf->GetCameraCenter();
+		float keyposx=keyT.at<float>(0);
+		float keyposy=keyT.at<float>(1);
+		float keyposz=keyT.at<float>(2);
+		cv::Mat keyR=kf->GetRotation();
+		float dirx=keyR.at<float>(2,0);
+		float diry=keyR.at<float>(2,1);
+		float dirz=keyR.at<float>(2,2);
+		float sidex=keyR.at<float>(0,0);
+		float sidey=keyR.at<float>(0,1);
+		float sidez=keyR.at<float>(0,2);
+
+		float distsqr=	(keyposx-camposx)*(keyposx-camposx)+
+						(keyposy-camposy)*(keyposy-camposy)+
+						(keyposz-camposz)*(keyposz-camposz);
+		
+		float perpdir= ((keyposx-camposx)*dirx+(keyposy-camposy)*diry+(keyposz-camposz)*dirz);
+
+		if( distsqr>0.2*0.2 && distsqr<1.5*1.5 && perpdir>maxperpdir )
+		{
+			waypos=cv::Vec3f( keyposx, keyposy, keyposz );
+			maxperpdir=perpdir;
+
+			float perpside=-((waypos[0]-camposx)*sidex+(waypos[1]-camposy)*sidey+(waypos[2]-camposz)*sidez);	
+			wayerr[0]=sidex*perpside;
+			wayerr[1]=sidey*perpside;
+			wayerr[2]=sidez*perpside;
+			wayerror=perpside;
+		}
+
+	}
+
+	out_throttleServo=90;	
+	out_steeringServo=90;
+
+	if( maxperpdir>0 )
+	{
+		glPointSize(15);
+		glBegin(GL_POINTS);
+		glColor3f(0.0,1.0,0.0);
+		glVertex3f( waypos[0], waypos[1], waypos[2] );
+		glEnd();
+
+		glLineWidth(2);
+		glBegin(GL_LINES);
+		glColor3f(0.0,0.0,1.0);
+		glVertex3f( waypos[0], waypos[1], waypos[2] );
+		glVertex3f( waypos[0]+wayerr[0], waypos[1]+wayerr[1], waypos[2]+wayerr[2] );
+		glEnd();
+
+		
+		float maxerror=1;
+		float error=2*(wayerror/maxerror);
+		if( error>1 ){ error=1; }
+		else
+		if( error<-1 ){ error=-1; }
+
+		int errori=90+int(error*90);
+		if( errori<0 ){ errori=0; }
+		if( errori>180 ){ errori=180; }
+
+		out_steeringSestd_msgs/UInt16rvo=(unsigned char)(errori&255);
+	}
 
 }
 
-void MapDrawer::DrawMapPoints()
+void MapDrawer::DrawWaypoints( bool generate, bool lower )
 {
-    const vector<MapPoint*> &vpMPs = mpMap->GetAllMapPoints();
+	float yoff=0;
+	if( lower ){ yoff+=0.4; }
+
+	pangolin::OpenGlMatrix oglcamM;
+	GetCurrentOpenGLCameraMatrix(oglcamM);
+	float camx=oglcamM.m[12];
+	float camy=oglcamM.m[13];
+	float camz=oglcamM.m[14];
+
+	if( s_waypoints.size()==0 )
+	{
+		s_waypoints.push_back( cv::Vec3f( camx, camy, camz ) );
+	}
+
+	float posx=s_waypoints[s_waypoints.size()-1][0];
+	float posy=s_waypoints[s_waypoints.size()-1][1];
+	float posz=s_waypoints[s_waypoints.size()-1][2];
+
+	float distsqr=  (posx-camx)*(posx-camx)+
+					(posy-camy)*(posy-camy)+
+					(posz-camz)*(posz-camz);
+	if( generate && distsqr>1*1 )
+	{
+		s_waypoints.push_back( cv::Vec3f( camx, camy, camz ) );
+	}
+
+	glLineWidth(2);
+	glBegin(GL_LINE_STRIP);
+	glColor3f(0.0,1.0,0.0);
+	for( int ii=0, iiend=s_waypoints.size(); ii<iiend; ii++ )
+	{
+		posx=s_waypoints[ii][0];
+		posy=s_waypoints[ii][1];
+		posz=s_waypoints[ii][2];
+		glVertex3f( posx, posy+yoff, posz );
+	}
+	//glVertex3f( camx, camy, camz );
+	glEnd();
+
+	glPointSize(10);
+	glBegin(GL_POINTS);
+	glColor3f(1.0,1.0,1.0);
+	for( int ii=0, iiend=s_waypoints.size()-1; ii<iiend; ii++ )
+	{
+		posx=s_waypoints[ii][0];
+		posy=s_waypoints[ii][1];
+		posz=s_waypoints[ii][2];
+		glVertex3f( posx, posy+yoff, posz );
+	}
+	glEnd();
+
+}
+
+void MapDrawer::DrawMapPoints(bool drawPoints, bool drawTiles )
+{
+	hmap_clear();
+	
+/*
+	const vector<MapPoint*> &vpMPs = mpMap->GetAllMapPoints();
     const vector<MapPoint*> &vpRefMPs = mpMap->GetReferenceMapPoints();
 
     set<MapPoint*> spRefMPs(vpRefMPs.begin(), vpRefMPs.end());
 
     if(vpMPs.empty())
-        return;
-
-    glPointSize(mPointSize);
+		return;
+		
+	if( drawPoints )
+	{
+    glPointSize(mPointSize*2);
     glBegin(GL_POINTS);
-    glColor3f(0.0,0.0,0.0);
+    glColor3f(0.0,1.0,0.0);
+	}
 
     for(size_t i=0, iend=vpMPs.size(); i<iend;i++)
     {
-        if(vpMPs[i]->isBad() || spRefMPs.count(vpMPs[i]))
-            continue;
+        if(vpMPs[i]->isBad() || spRefMPs.count(vpMPs[i])){ continue; }
         cv::Mat pos = vpMPs[i]->GetWorldPos();
-        glVertex3f(pos.at<float>(0),pos.at<float>(1),pos.at<float>(2));
-    }
-    glEnd();
+		
+		if( drawPoints )
+		glVertex3f(pos.at<float>(0),pos.at<float>(1),pos.at<float>(2));
+	
+		if( drawTiles )
+		if(vpMPs[i]->Observations()>=4)
+		{hmap_set(pos.at<float>(0),pos.at<float>(1),pos.at<float>(2));}
+	}
+    if( drawPoints )glEnd();
 
+	if( drawPoints )
+	{
     glPointSize(mPointSize);
     glBegin(GL_POINTS);
     glColor3f(1.0,0.0,0.0);
+	}
 
     for(set<MapPoint*>::iterator sit=spRefMPs.begin(), send=spRefMPs.end(); sit!=send; sit++)
     {
-        if((*sit)->isBad())
-            continue;
+        if((*sit)->isBad()){ continue; }
         cv::Mat pos = (*sit)->GetWorldPos();
-        glVertex3f(pos.at<float>(0),pos.at<float>(1),pos.at<float>(2));
+		
+		if( drawPoints )
+		glVertex3f(pos.at<float>(0),pos.at<float>(1),pos.at<float>(2));
 
+		if( drawTiles )
+		if((*sit)->Observations()>=4)
+		{hmap_set(pos.at<float>(0),pos.at<float>(1),pos.at<float>(2));}
     }
 
-    glEnd();
+    if( drawPoints )glEnd();
+*/	
+
+	
+
+
+	if( drawPoints )
+	{
+    glPointSize(mPointSize);
+    glBegin(GL_POINTS);
+    glColor3f(1.0,1.0,1.0);
+	}
+	const vector<KeyFrame*> vpKFs = mpMap->GetAllKeyFrames();
+	for(size_t jj=0; jj<vpKFs.size(); jj++)
+	{
+		KeyFrame* kf=vpKFs[jj];
+		const vector<MapPoint*> &vpMPs=kf->GetMapPointMatches();
+
+		cv::Mat campos=kf->GetCameraCenter();
+		float camposx=campos.at<float>(0);
+		float camposy=campos.at<float>(1);
+		float camposz=campos.at<float>(2);
+		cv::Mat camR=kf->GetRotation();
+		float upx=camR.at<float>(0,1);
+		float upy=camR.at<float>(1,1);
+		float upz=camR.at<float>(2,1);
+		//printf("%f %f %f\n",upx,upy,upz);
+
+		set<MapPoint*> spRefMPs=kf->GetMapPoints();
+		for(set<MapPoint*>::iterator sit=spRefMPs.begin(), send=spRefMPs.end(); sit!=send; sit++)
+		{
+			if((*sit)->isBad()){ continue; }
+			cv::Mat pos = (*sit)->GetWorldPos();
+
+
+		//for(size_t ii=0, iiend=vpMPs.size(); ii<iiend;ii++)
+    	//{
+			//if( vpMPs[ii]==NULL){ continue; }
+        	//if( vpMPs[ii]->isBad() ){ continue; }
+			
+			//cv::Mat pos = vpMPs[ii]->GetWorldPos();
+			float posx=pos.at<float>(0);
+			float posy=pos.at<float>(1);
+			float posz=pos.at<float>(2);
+
+			/*
+			float distsqr=  (posx-camposx)*(posx-camposx)+
+							(posy-camposy)*(posy-camposy)+
+							(posz-camposz)*(posz-camposz);
+			*/
+			bool lower=true;
+			glColor3f(1.0,1.0,1.0);
+
+			float dot=(posx-camposx)*upx+(posy-camposy)*upy+(posz-camposz)*upz;
+
+			if(dot<0){ lower=false; glColor3f(1.0,0.0,0.0); }
+			
+			if( drawPoints )
+			glVertex3f(posx,posy,posz);
+	
+			if( drawTiles && lower ) //&& distsqr>1*1 && distsqr<10*10 )
+			if( (*sit)->Observations()>=5)
+			//if( vpMPs[ii]->GetFound()>10 )
+			{hmap_set(posx,posy,posz);}
+		}
+	}
+	if( drawPoints )
+	glEnd();
+
+
+	if( drawTiles )hmap_draw();
+
+
+
+	/*
+	for( int ii=0, iiend=s_waypoints.size()-1; ii<iiend; ii++ )
+	{
+		cv::Vec3f waya=s_waypoints[ii+0];
+		cv::Vec3f wayb=s_waypoints[ii+1];
+
+		cv::Vec3f waydir=cv::Vec3f(wayb[0]-waya[0],wayb[1]-waya[1],wayb[2]-waya[2]);
+		float waydirlensqr=waydir[0]*waydir[0]+waydir[1]*wadir[1]+waydir[2]*wadir[2];
+		if( waydirlensqr>0.01 ){ continue; }
+		float waydirlen=sqrt(waydirlensqr);
+		waydir[0]/=waydirlen;
+		waydir[1]/=waydirlen;
+		waydir[2]/=waydirlen;
+
+		cv::Vec3f test=carpos;
+		test[0]-=waya[0];
+		test[1]-=waya[1];
+		test[2]-=waya[2];
+		float dot=test[0]*waydir[0]+test[1]*waydir[1]+test[2]*waydir[2];
+		
+		test[0]+=dot*waydir[0];
+		test[1]+=dot*waydir[1];
+		test[2]+=dot*waydir[2];
+
+	}
+	*/
+
+
 }
 
 void MapDrawer::DrawKeyFrames(const bool bDrawKF, const bool bDrawGraph)
@@ -99,8 +448,8 @@ void MapDrawer::DrawKeyFrames(const bool bDrawKF, const bool bDrawGraph)
 
             glMultMatrixf(Twc.ptr<GLfloat>(0));
 
-            glLineWidth(mKeyFrameLineWidth);
-            glColor3f(0.0f,0.0f,1.0f);
+            glLineWidth(mKeyFrameLineWidth*2);
+            glColor3f(1.0f,1.0f,1.0f);
             glBegin(GL_LINES);
             glVertex3f(0,0,0);
             glVertex3f(w,h,z);
@@ -176,8 +525,12 @@ void MapDrawer::DrawKeyFrames(const bool bDrawKF, const bool bDrawGraph)
     }
 }
 
-void MapDrawer::DrawCurrentCamera(pangolin::OpenGlMatrix &Twc)
+void MapDrawer::DrawCurrentCamera()
 {
+	pangolin::OpenGlMatrix Twc;
+	GetCurrentOpenGLCameraMatrix(Twc);
+
+
     const float &w = mCameraSize;
     const float h = w*0.75;
     const float z = w*0.6;
@@ -260,5 +613,6 @@ void MapDrawer::GetCurrentOpenGLCameraMatrix(pangolin::OpenGlMatrix &M)
     else
         M.SetIdentity();
 }
+
 
 } //namespace ORB_SLAM

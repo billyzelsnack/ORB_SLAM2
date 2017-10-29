@@ -54,7 +54,12 @@ public:
         MONOCULAR=0,
         STEREO=1,
         RGBD=2
-    };
+	};
+	
+public:
+
+	unsigned char throttleServo;
+	unsigned char steeringServo;
 
 public:
 
@@ -151,9 +156,10 @@ private:
     // a pose graph optimization and full bundle adjustment (in a new thread) afterwards.
     LoopClosing* mpLoopCloser;
 
+public:
     // The viewer draws the map and the current camera pose. It uses Pangolin.
     Viewer* mpViewer;
-
+private:
     FrameDrawer* mpFrameDrawer;
     MapDrawer* mpMapDrawer;
 
